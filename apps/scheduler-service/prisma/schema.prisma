@@ -1,0 +1,47 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../node_modules/@prisma/client/scheduler"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkerNodeStatus {
+  HEALTHY
+  UNHEALTHY
+}
+
+enum ReservationState {
+  RESERVED
+  COMMITTED
+}
+
+model WorkerNode {
+  id           String          @id
+  status       WorkerNodeStatus @default(HEALTHY)
+  totalCpu     Int
+  totalMemory  Int
+  freeCpu      Int
+  freeMemory   Int
+  lastSeenAt   DateTime
+
+  reservations ResourceReservation[]
+
+  @@map("worker_nodes")
+}
+
+model ResourceReservation {
+  instanceId String          @id @db.Uuid
+  nodeId     String
+  cpu        Int
+  memory     Int
+  state      ReservationState @default(RESERVED)
+  createdAt  DateTime         @default(now())
+
+  node WorkerNode @relation(fields: [nodeId], references: [id])
+
+  @@map("resource_reservations")
+}

@@ -1,0 +1,33 @@
+{
+  "name": "kafka",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/kafka/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/shared/kafka",
+        "main": "libs/shared/kafka/src/index.ts",
+        "tsConfig": "libs/shared/kafka/tsconfig.lib.json",
+        "assets": ["libs/shared/kafka/*.md"]
+      }
+    },
+    "check-broker": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node -e \"const { Kafka } = require('kafkajs'); const k = new Kafka({ clientId: 'health-check', brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(',') }); const admin = k.admin(); admin.connect().then(() => admin.listTopics()).then(t => { console.log('Broker OK. Topics:', t); return admin.disconnect(); }).catch(e => { console.error('Broker UNREACHABLE:', e.message); process.exit(1); });\"",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "create-topics": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node -e \"const { Kafka } = require('kafkajs'); const k = new Kafka({ clientId: 'topic-setup', brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(',') }); const admin = k.admin(); const topics = ['instance.requested','instance.terminate','instance.schedule.requested','instance.scheduled','instance.provision.failed','instance.provisioned','instance.termination.requested','instance.terminated','instance.status.changed','instance.failed','worker.heartbeat','worker.node.unhealthy']; admin.connect().then(() => admin.createTopics({ topics: topics.map(t => ({ topic: t, numPartitions: 3, replicationFactor: 1 })), waitForLeaders: true })).then(() => { console.log('Topics created:', topics); return admin.disconnect(); }).catch(e => { console.error('Failed:', e.message); process.exit(1); });\"",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}
