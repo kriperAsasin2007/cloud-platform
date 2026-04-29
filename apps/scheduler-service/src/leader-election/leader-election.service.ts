@@ -11,20 +11,6 @@ import { NodeHealthMonitor } from '../scheduler/node-health.monitor';
 
 const ELECTION_PATH = '/scheduler-election';
 
-/**
- * ZooKeeper-based leader election using the sequential ephemeral znode recipe.
- *
- * Algorithm (avoids herd effect):
- * 1. Create /scheduler-election if it doesn't exist (persistent).
- * 2. Create /scheduler-election/n_ with EPHEMERAL + SEQUENTIAL flags.
- *    ZK appends a monotonically increasing sequence number.
- * 3. Get all children and sort by sequence number.
- * 4. If this node's znode is the smallest → become leader.
- * 5. Otherwise → watch the predecessor (not the global smallest),
- *    so only one node is notified on any given deletion → no herd effect.
- * 6. On predecessor deletion → re-run election from step 3.
- * 7. On ZK session expiry → clean up, reconnect, and re-run election.
- */
 @Injectable()
 export class LeaderElectionService
   extends EventEmitter
@@ -63,7 +49,9 @@ export class LeaderElectionService
   }
 
   private connect(): Promise<void> {
-    const connectionString = this.config.getOrThrow<string>('ZK_CONNECTION_STRING');
+    const connectionString = this.config.getOrThrow<string>(
+      'ZK_CONNECTION_STRING',
+    );
 
     return new Promise((resolve) => {
       this.client = zookeeper.createClient(connectionString, {
@@ -81,7 +69,9 @@ export class LeaderElectionService
 
       this.client.on('disconnected', () => {
         if (!this.destroyed) {
-          this.logger.warn('Disconnected from ZooKeeper — will reconnect on session restore');
+          this.logger.warn(
+            'Disconnected from ZooKeeper — will reconnect on session restore',
+          );
         }
       });
 
@@ -106,7 +96,11 @@ export class LeaderElectionService
   private ensureElectionPath(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.client.mkdirp(ELECTION_PATH, (err) => {
-        if (err && (err as zookeeper.Exception).getCode?.() !== zookeeper.Exception.NODE_EXISTS) {
+        if (
+          err &&
+          (err as zookeeper.Exception).getCode?.() !==
+            zookeeper.Exception.NODE_EXISTS
+        ) {
           return reject(err);
         }
         resolve();
@@ -134,9 +128,7 @@ export class LeaderElectionService
     if (!this.myZnodePath) return;
 
     const children = await this.getChildren();
-    const sorted = children
-      .filter((c) => c.startsWith('n_'))
-      .sort();
+    const sorted = children.filter((c) => c.startsWith('n_')).sort();
 
     const myName = this.myZnodePath.split('/').pop()!;
     const myIndex = sorted.indexOf(myName);
@@ -168,14 +160,19 @@ export class LeaderElectionService
         (event) => {
           if (this.destroyed) return;
           if (event.getType() === zookeeper.Event.NODE_DELETED) {
-            this.logger.log(`Predecessor deleted (${predecessorPath}) — re-running election`);
+            this.logger.log(
+              `Predecessor deleted (${predecessorPath}) — re-running election`,
+            );
             if (this._isLeader) {
               // Shouldn't happen, but guard anyway
               this.healthMonitor.stop();
               this._isLeader = false;
             }
             this.runElection().catch((err) =>
-              this.logger.error('Election error after predecessor deleted', err),
+              this.logger.error(
+                'Election error after predecessor deleted',
+                err,
+              ),
             );
           }
         },
