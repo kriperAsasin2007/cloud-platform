@@ -1,0 +1,23 @@
+version: '3.8'
+
+# Run this on the Linux worker machine.
+# Prerequisites:
+#   - Docker daemon running
+#   - Copy apps/worker-node/.env.example → apps/worker-node/.env and fill in values
+#   - Kafka must be reachable at KAFKA_BROKERS from this machine
+
+services:
+  worker-node:
+    build:
+      context: .
+      dockerfile: apps/worker-node/Dockerfile
+    env_file:
+      - apps/worker-node/.env
+    ports:
+      - "${SSH_PROXY_PORT:-2222}:${SSH_PROXY_PORT:-2222}"
+      - "${PORT:-3003}:${PORT:-3003}"
+    volumes:
+      # Mount Docker socket so the worker can manage containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: host
+    restart: unless-stopped

@@ -9,6 +9,7 @@ interface InstanceRequestedMsg {
   cpu: number;
   memory: number;
   imageType: string;
+  publicKey: string;
 }
 
 interface InstanceProvisionedMsg {
@@ -50,6 +51,7 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
     await this.kafka.createConsumer(
       [
         'instance.requested',
+        'instance.provisioning',
         'instance.provisioned',
         'instance.provision.failed',
         'instance.terminate',
@@ -64,6 +66,8 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
     switch (topic) {
       case 'instance.requested':
         return this.onInstanceRequested(payload as InstanceRequestedMsg);
+      case 'instance.provisioning':
+        return this.onInstanceProvisioning(payload as { instanceId: string });
       case 'instance.provisioned':
         return this.onInstanceProvisioned(payload as InstanceProvisionedMsg);
       case 'instance.provision.failed':
@@ -73,6 +77,11 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
       case 'instance.terminated':
         return this.onTerminated(payload as TerminatedMsg);
     }
+  }
+
+  private async onInstanceProvisioning(msg: { instanceId: string }): Promise<void> {
+    this.logger.log(`instance.provisioning: ${msg.instanceId}`);
+    await this.instanceService.updateInstanceStatus(msg.instanceId, InstanceStatus.PROVISIONING);
   }
 
   private async onInstanceRequested(msg: InstanceRequestedMsg): Promise<void> {
@@ -100,6 +109,7 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
             cpu: msg.cpu,
             memory: msg.memory,
             imageType: msg.imageType,
+            publicKey: msg.publicKey,
           },
         }],
       });

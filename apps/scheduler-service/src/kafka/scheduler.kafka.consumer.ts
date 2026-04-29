@@ -9,6 +9,7 @@ interface ScheduleRequestedMsg {
   cpu: number;
   memory: number;
   imageType: string;
+  publicKey: string;
 }
 
 interface InstanceProvisionedMsg {
@@ -97,6 +98,7 @@ export class SchedulerKafkaConsumer implements OnApplicationBootstrap {
           cpu: msg.cpu,
           memory: msg.memory,
           imageType: msg.imageType,
+          publicKey: msg.publicKey,
         },
       }],
     });
