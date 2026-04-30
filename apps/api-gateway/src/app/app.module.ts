@@ -1,10 +1,21 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { KafkaModule } from '@cloud-platform-app/kafka';
+import { MetricsClientModule } from '@cloud-platform-app/metrics-client';
+import { UsersClientModule } from '@cloud-platform-app/users-client';
+import { JwtMiddleware } from '../auth/jwt.middleware';
+import { AuthController } from '../auth/auth.controller';
+import { AuthService } from '../auth/auth.service';
 import { InstancesController } from '../instances/instances.controller';
 import { InstancesService } from '../instances/instances.service';
 import { EventsGateway } from '../websockets/events.gateway';
 import { ApiGatewayKafkaConsumer } from '../kafka/api-gateway.kafka.consumer';
+import { MetricsController } from '../metrics/metrics.controller';
 
 @Module({
   imports: [
@@ -17,8 +28,35 @@ import { ApiGatewayKafkaConsumer } from '../kafka/api-gateway.kafka.consumer';
         groupId: config.getOrThrow('KAFKA_GROUP_ID'),
       }),
     }),
+    MetricsClientModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        metricsServiceUrl: config.getOrThrow('METRICS_SERVICE_URL'),
+        internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
+      }),
+    }),
+    UsersClientModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        usersServiceUrl: config.getOrThrow('USERS_SERVICE_URL'),
+        internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
+      }),
+    }),
   ],
-  controllers: [InstancesController],
-  providers: [InstancesService, EventsGateway, ApiGatewayKafkaConsumer],
+  controllers: [AuthController, InstancesController, MetricsController],
+  providers: [AuthService, InstancesService, EventsGateway, ApiGatewayKafkaConsumer],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(JwtMiddleware)
+      .forRoutes(
+        { path: 'instances', method: RequestMethod.POST },
+        { path: 'instances/:id', method: RequestMethod.DELETE },
+        { path: 'metrics/me', method: RequestMethod.GET },
+        { path: 'metrics/instances/:id', method: RequestMethod.GET },
+      );
+  }
+}

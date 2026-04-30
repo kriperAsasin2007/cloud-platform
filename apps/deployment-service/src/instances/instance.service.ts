@@ -66,4 +66,5 @@ export class InstanceService {
   getInstanceWithNode(instanceId: string): Promise<Instance | null> {
     return this.repo.findById(instanceId);
   }
+
 }

@@ -7,6 +7,23 @@ version: '3.8'
 #   - Kafka must be reachable at KAFKA_BROKERS from this machine
 
 services:
+  postgres-worker:
+    image: postgres:15-alpine
+    container_name: postgres-worker
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: worker_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_worker_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   worker-node:
     build:
       context: .
@@ -19,5 +36,12 @@ services:
     volumes:
       # Mount Docker socket so the worker can manage containers
       - /var/run/docker.sock:/var/run/docker.sock
+    # NOTE: network_mode: host means DATABASE_URL must use localhost:5433, not postgres-worker:5432
     network_mode: host
+    depends_on:
+      postgres-worker:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_worker_data:

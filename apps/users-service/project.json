@@ -1,0 +1,92 @@
+{
+  "name": "users-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/users-service/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prisma-generate"],
+      "options": {
+        "command": "webpack-cli build",
+        "args": ["--node-env=production"],
+        "cwd": "apps/users-service"
+      },
+      "configurations": {
+        "development": { "args": ["--node-env=development"] }
+      }
+    },
+    "prisma-generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx prisma generate --schema=apps/users-service/prisma/schema.prisma && node -e \"const fs=require('fs'),p='node_modules/@prisma/client/package.json',pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.exports['./users']={'require':'./users/index.js','import':'./users/index.js','default':'./users/index.js'};fs.writeFileSync(p,JSON.stringify(pkg,null,2));\"",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx prisma migrate dev --schema=apps/users-service/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-migrate-deploy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx prisma migrate deploy --schema=apps/users-service/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-studio": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx prisma studio --schema=apps/users-service/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-seed": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prisma-generate"],
+      "options": {
+        "command": "npx ts-node --project apps/users-service/tsconfig.app.json apps/users-service/prisma/seed.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prune-lockfile": {
+      "dependsOn": ["build"],
+      "cache": true,
+      "executor": "@nx/js:prune-lockfile",
+      "outputs": [
+        "{workspaceRoot}/dist/apps/users-service/package.json",
+        "{workspaceRoot}/dist/apps/users-service/package-lock.json"
+      ],
+      "options": { "buildTarget": "build" }
+    },
+    "copy-workspace-modules": {
+      "dependsOn": ["build"],
+      "cache": true,
+      "outputs": ["{workspaceRoot}/dist/apps/users-service/workspace_modules"],
+      "executor": "@nx/js:copy-workspace-modules",
+      "options": { "buildTarget": "build" }
+    },
+    "prune": {
+      "dependsOn": ["prune-lockfile", "copy-workspace-modules"],
+      "executor": "nx:noop"
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "users-service:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": { "buildTarget": "users-service:build:development" },
+        "production": { "buildTarget": "users-service:build:production" }
+      }
+    }
+  }
+}

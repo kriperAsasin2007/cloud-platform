@@ -5,33 +5,32 @@ import {
   Get,
   Param,
   Body,
-  Headers,
   HttpCode,
   HttpStatus,
-  BadRequestException,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InstancesService, CreateInstanceDto } from './instances.service';
+import { UserId } from '../auth/user-id.decorator';
 
-function requireUserId(userId: string | undefined): asserts userId is string {
-  if (!userId) throw new BadRequestException('x-user-id header is required');
-}
-
+@ApiTags('instances')
+@ApiBearerAuth('access-token')
 @Controller('instances')
 export class InstancesController {
   constructor(private readonly instancesService: InstancesService) {}
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Request a new instance (async)' })
   async createInstance(
-    @Headers('x-user-id') userId: string,
+    @UserId() userId: string,
     @Body() dto: CreateInstanceDto,
   ): Promise<{ instanceId: string }> {
-    requireUserId(userId);
     return this.instancesService.requestCreate(userId, dto);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Get instance info (use WebSocket for live status)' })
   getInstance(
     @Param('id', ParseUUIDPipe) id: string,
   ): { instanceId: string; message: string } {
@@ -40,11 +39,11 @@ export class InstancesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Request instance termination (async)' })
   async terminateInstance(
-    @Headers('x-user-id') userId: string,
+    @UserId() userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
-    requireUserId(userId);
     await this.instancesService.requestTerminate(id, userId);
   }
 }

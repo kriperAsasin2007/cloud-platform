@@ -16,7 +16,14 @@
     "baseUrl": ".",
     "paths": {
       "@cloud-platform-app/prisma": ["libs/shared/prisma/src/index.ts"],
-      "@cloud-platform-app/kafka": ["libs/shared/kafka/src/index.ts"]
+      "@cloud-platform-app/kafka": ["libs/shared/kafka/src/index.ts"],
+      "@cloud-platform-app/metrics-client": [
+        "libs/shared/metrics-client/src/index.ts"
+      ],
+      "@cloud-platform-app/auth": ["libs/shared/auth/src/index.ts"],
+      "@cloud-platform-app/users-client": [
+        "libs/shared/users-client/src/index.ts"
+      ]
     }
   },
   "exclude": ["node_modules", "tmp"]

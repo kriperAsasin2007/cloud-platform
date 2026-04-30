@@ -42,138 +42,144 @@ export class SshProxyService implements OnModuleInit, OnModuleDestroy {
 
     client.on('authentication', (ctx) => {
       instanceId = ctx.username;
-      const info = this.provisioning.getContainerByInstanceId(instanceId);
 
-      if (!info) {
-        this.logger.warn(`SSH auth rejected — unknown instance: ${instanceId}`);
-        ctx.reject();
-        return;
-      }
+      (async () => {
+        const info = await this.provisioning.getContainerByInstanceId(instanceId);
 
-      if (!info.userPublicKey) {
-        this.logger.warn(
-          `SSH auth rejected — instance ${instanceId} has no registered public key (was it created before key-auth was enabled?)`,
-        );
-        ctx.reject();
-        return;
-      }
-
-      if (ctx.method !== 'publickey') {
-        ctx.reject(['publickey']);
-        return;
-      }
-
-      // Compare raw key bytes directly — avoids any parseKey→getPublicSSH round-trip
-      // reencoding. The middle token of an OpenSSH public key IS the base64 of the
-      // SSH wire blob, identical to what the client sends as ctx.key.data.
-      const storedParts = info.userPublicKey.trim().split(/\s+/);
-      if (storedParts.length < 2) {
-        this.logger.warn(
-          `SSH auth rejected — malformed stored key for instance: ${instanceId}`,
-        );
-        ctx.reject();
-        return;
-      }
-      const storedBlob = Buffer.from(storedParts[1], 'base64');
-
-      this.logger.debug(
-        `Auth [${instanceId}] algo=${ctx.key.algo} client_len=${ctx.key.data.length} stored_len=${storedBlob.length}`,
-      );
-
-      if (!ctx.key.data.equals(storedBlob)) {
-        this.logger.warn(
-          `SSH auth rejected — key mismatch for instance: ${instanceId}`,
-        );
-        ctx.reject();
-        return;
-      }
-
-      if (ctx.signature) {
-        if (!ctx.blob) {
+        if (!info) {
+          this.logger.warn(`SSH auth rejected — unknown instance: ${instanceId}`);
           ctx.reject();
           return;
         }
-        const parsedKey = ssh2.utils.parseKey(info.userPublicKey.trim());
-        if (
-          !parsedKey ||
-          parsedKey instanceof Error ||
-          Array.isArray(parsedKey)
-        ) {
+
+        if (!info.userPublicKey) {
           this.logger.warn(
-            `SSH auth rejected — stored key unparseable for instance: ${instanceId}`,
+            `SSH auth rejected — instance ${instanceId} has no registered public key (was it created before key-auth was enabled?)`,
           );
           ctx.reject();
           return;
         }
-        // ctx.hashAlgo is already set by ssh2: 'sha256' for rsa-sha2-256,
-        // 'sha512' for rsa-sha2-512, undefined for legacy ssh-rsa (SHA-1).
-        // ctx.key.algo is always normalized to 'ssh-rsa' so we must NOT derive
-        // the hash from it — use ctx.hashAlgo directly.
-        const result = parsedKey.verify(ctx.blob, ctx.signature, ctx.hashAlgo);
-        if (result !== true) {
+
+        if (ctx.method !== 'publickey') {
+          ctx.reject(['publickey']);
+          return;
+        }
+
+        // Compare raw key bytes directly — avoids any parseKey→getPublicSSH round-trip
+        // reencoding. The middle token of an OpenSSH public key IS the base64 of the
+        // SSH wire blob, identical to what the client sends as ctx.key.data.
+        const storedParts = info.userPublicKey.trim().split(/\s+/);
+        if (storedParts.length < 2) {
           this.logger.warn(
-            `SSH auth rejected — signature verification failed for instance: ${instanceId} (result=${result})`,
+            `SSH auth rejected — malformed stored key for instance: ${instanceId}`,
           );
           ctx.reject();
           return;
         }
-      }
+        const storedBlob = Buffer.from(storedParts[1], 'base64');
 
-      ctx.accept();
+        this.logger.debug(
+          `Auth [${instanceId}] algo=${ctx.key.algo} client_len=${ctx.key.data.length} stored_len=${storedBlob.length}`,
+        );
+
+        if (!ctx.key.data.equals(storedBlob)) {
+          this.logger.warn(
+            `SSH auth rejected — key mismatch for instance: ${instanceId}`,
+          );
+          ctx.reject();
+          return;
+        }
+
+        if (ctx.signature) {
+          if (!ctx.blob) {
+            ctx.reject();
+            return;
+          }
+          const parsedKey = ssh2.utils.parseKey(info.userPublicKey.trim());
+          if (
+            !parsedKey ||
+            parsedKey instanceof Error ||
+            Array.isArray(parsedKey)
+          ) {
+            this.logger.warn(
+              `SSH auth rejected — stored key unparseable for instance: ${instanceId}`,
+            );
+            ctx.reject();
+            return;
+          }
+          // ctx.hashAlgo is already set by ssh2: 'sha256' for rsa-sha2-256,
+          // 'sha512' for rsa-sha2-512, undefined for legacy ssh-rsa (SHA-1).
+          // ctx.key.algo is always normalized to 'ssh-rsa' so we must NOT derive
+          // the hash from it — use ctx.hashAlgo directly.
+          const result = parsedKey.verify(ctx.blob, ctx.signature, ctx.hashAlgo);
+          if (result !== true) {
+            this.logger.warn(
+              `SSH auth rejected — signature verification failed for instance: ${instanceId} (result=${result})`,
+            );
+            ctx.reject();
+            return;
+          }
+        }
+
+        ctx.accept();
+      })().catch(() => ctx.reject());
     });
 
     client.on('ready', () => {
-      const info = this.provisioning.getContainerByInstanceId(instanceId);
-      if (!info?.proxyPrivateKey) {
-        client.end();
-        return;
-      }
+      (async () => {
+        const info = await this.provisioning.getContainerByInstanceId(instanceId);
+        if (!info?.proxyPrivateKey) {
+          client.end();
+          return;
+        }
 
-      upstream = new ssh2.Client();
+        const up = new ssh2.Client();
+        upstream = up;
 
-      upstream.on('ready', () => {
-        this.logger.log(
-          `SSH proxy: ${instanceId} → localhost:${info.hostPort}`,
-        );
-
-        client.on('session', (accept) => {
-          const session = accept();
-          this.forwardSession(session, upstream!);
-        });
-
-        // TCP forward requests (e.g. ssh -L tunnelling)
-        client.on('tcpip', (accept, _reject, info) => {
-          upstream!.forwardOut(
-            info.srcIP,
-            info.srcPort,
-            info.destIP,
-            info.destPort,
-            (err, upStream) => {
-              if (err) {
-                accept().close();
-                return;
-              }
-              const channel = accept();
-              channel.pipe(upStream).pipe(channel);
-            },
+        up.on('ready', () => {
+          this.logger.log(
+            `SSH proxy: ${instanceId} → localhost:${info.hostPort}`,
           );
+
+          client.on('session', (accept) => {
+            const session = accept();
+            this.forwardSession(session, up);
+          });
+
+          // TCP forward requests (e.g. ssh -L tunnelling)
+          client.on('tcpip', (accept, _reject, tcpInfo) => {
+            up.forwardOut(
+              tcpInfo.srcIP,
+              tcpInfo.srcPort,
+              tcpInfo.destIP,
+              tcpInfo.destPort,
+              (err, upStream) => {
+                if (err) {
+                  accept().close();
+                  return;
+                }
+                const channel = accept();
+                channel.pipe(upStream).pipe(channel);
+              },
+            );
+          });
         });
-      });
 
-      upstream.on('error', (err) => {
-        this.logger.error(
-          `Upstream SSH error for ${instanceId}: ${err.message}`,
-        );
-        client.end();
-      });
+        up.on('error', (err) => {
+          this.logger.error(
+            `Upstream SSH error for ${instanceId}: ${err.message}`,
+          );
+          client.end();
+        });
 
-      upstream.connect({
-        host: '127.0.0.1',
-        port: info.hostPort,
-        username: 'user',
-        privateKey: info.proxyPrivateKey,
-        readyTimeout: 20_000,
-      });
+        up.connect({
+          host: '127.0.0.1',
+          port: info.hostPort,
+          username: 'user',
+          privateKey: info.proxyPrivateKey,
+          readyTimeout: 20_000,
+        });
+      })().catch(() => client.end());
     });
 
     client.on('error', (err) => {

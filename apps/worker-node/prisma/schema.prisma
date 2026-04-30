@@ -1,0 +1,36 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../node_modules/@prisma/client/worker"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContainerStatus {
+  RUNNING
+  STOPPED
+  REMOVED
+}
+
+model Container {
+  instanceId    String          @id @db.Uuid
+  containerId   String
+  sshPort       Int
+  cpuMillicores Int
+  memoryMb      Int
+  status        ContainerStatus @default(RUNNING)
+  createdAt     DateTime        @default(now())
+
+  @@map("containers")
+}
+
+model AllocatedPort {
+  port        Int      @id
+  instanceId  String   @db.Uuid
+  allocatedAt DateTime @default(now())
+
+  @@map("allocated_ports")
+}

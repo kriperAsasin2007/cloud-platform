@@ -1,12 +1,20 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
 import { KafkaService } from '@cloud-platform-app/kafka';
 import { v4 as uuidv4 } from 'uuid';
 
-export interface CreateInstanceDto {
-  cpu: number;
-  memory: number;
-  imageType: string;
-  sshPublicKey: string;
+export class CreateInstanceDto {
+  @ApiProperty({ example: 500, description: 'CPU in millicores (e.g. 500 = 0.5 vCPU)' })
+  cpu!: number;
+
+  @ApiProperty({ example: 512, description: 'Memory in MB' })
+  memory!: number;
+
+  @ApiProperty({ example: 'ubuntu', description: 'Docker image type' })
+  imageType!: string;
+
+  @ApiProperty({ example: 'ssh-rsa AAAA...', description: 'SSH public key for instance access' })
+  sshPublicKey!: string;
 }
 
 @Injectable()
