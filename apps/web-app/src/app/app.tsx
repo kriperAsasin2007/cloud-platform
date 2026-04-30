@@ -1,49 +1,42 @@
-import NxWelcome from './nx-welcome';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { LoginPage } from '../pages/Login/LoginPage';
+import { Layout } from '../components/Layout/Layout';
+import { DashboardHome } from '../components/Dashboard/DashboardHome';
+import { InstancesTab } from '../components/Instances/InstancesTab';
 
-import { Route, Routes, Link } from 'react-router-dom';
+function AppRoutes() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <svg className="animate-spin w-8 h-8 text-blue-600" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<DashboardHome />} />
+        <Route path="/instances" element={<InstancesTab />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+}
 
 export function App() {
   return (
-    <div>
-      <NxWelcome title="web-app" />
-
-      {/* START: routes */}
-      {/* These routes and navigation have been generated for you */}
-      {/* Feel free to move and update them to fit your needs */}
-      <br />
-      <hr />
-      <br />
-      <div role="navigation">
-        <ul>
-          <li>
-            <Link to="/">Home</Link>
-          </li>
-          <li>
-            <Link to="/page-2">Page 2</Link>
-          </li>
-        </ul>
-      </div>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <div>
-              This is the generated root route.{' '}
-              <Link to="/page-2">Click here for page 2.</Link>
-            </div>
-          }
-        />
-        <Route
-          path="/page-2"
-          element={
-            <div>
-              <Link to="/">Click here to go back to root page.</Link>
-            </div>
-          }
-        />
-      </Routes>
-      {/* END: routes */}
-    </div>
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
 

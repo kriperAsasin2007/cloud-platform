@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
 import { KafkaService } from '@cloud-platform-app/kafka';
+import {
+  DeploymentClientService,
+  InstanceRecord,
+} from '@cloud-platform-app/deployment-client';
 import { v4 as uuidv4 } from 'uuid';
 
 export class CreateInstanceDto {
@@ -19,7 +23,14 @@ export class CreateInstanceDto {
 
 @Injectable()
 export class InstancesService {
-  constructor(private readonly kafka: KafkaService) {}
+  constructor(
+    private readonly kafka: KafkaService,
+    private readonly deploymentClient: DeploymentClientService,
+  ) {}
+
+  listInstances(userId: string): Promise<InstanceRecord[]> {
+    return this.deploymentClient.getUserInstances(userId);
+  }
 
   async requestCreate(
     userId: string,

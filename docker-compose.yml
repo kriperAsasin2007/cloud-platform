@@ -4,13 +4,14 @@ services:
     container_name: zookeeper-1
     environment:
       ZOO_MY_ID: 1
-      ZOO_SERVERS: server.1=0.0.0.0:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181 server.3=zookeeper-3:2888:3888;2181
+      ZOO_SERVERS: server.1=0.0.0.0:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181
+        server.3=zookeeper-3:2888:3888;2181
     ports:
       - "2181:2181"
     volumes:
       - zookeeper1_data:/data
     healthcheck:
-      test: ["CMD", "zkServer.sh", "status"]
+      test: [ "CMD", "zkServer.sh", "status" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -20,13 +21,14 @@ services:
     container_name: zookeeper-2
     environment:
       ZOO_MY_ID: 2
-      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=0.0.0.0:2888:3888;2181 server.3=zookeeper-3:2888:3888;2181
+      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=0.0.0.0:2888:3888;2181
+        server.3=zookeeper-3:2888:3888;2181
     ports:
       - "2182:2181"
     volumes:
       - zookeeper2_data:/data
     healthcheck:
-      test: ["CMD", "zkServer.sh", "status"]
+      test: [ "CMD", "zkServer.sh", "status" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,13 +38,14 @@ services:
     container_name: zookeeper-3
     environment:
       ZOO_MY_ID: 3
-      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181 server.3=0.0.0.0:2888:3888;2181
+      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181
+        server.2=zookeeper-2:2888:3888;2181 server.3=0.0.0.0:2888:3888;2181
     ports:
       - "2183:2181"
     volumes:
       - zookeeper3_data:/data
     healthcheck:
-      test: ["CMD", "zkServer.sh", "status"]
+      test: [ "CMD", "zkServer.sh", "status" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -94,7 +97,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: [ "CMD-SHELL", "pg_isready -U user" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -114,6 +117,7 @@ services:
       JWT_SECRET: dev-jwt-secret-change-in-prod
       JWT_REFRESH_SECRET: dev-jwt-refresh-secret-change-in-prod
       INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
+      DEPLOYMENT_SERVICE_URL: http://deployment-service:3001
       METRICS_SERVICE_URL: http://metrics-service:3004
       USERS_SERVICE_URL: http://users-service:3005
     depends_on:
@@ -136,6 +140,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: deployment-service
       KAFKA_GROUP_ID: deployment-service
+      INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
     depends_on:
       kafka:
         condition: service_healthy
