@@ -4,3 +4,6 @@
 
 CREATE DATABASE deployment_db;
 CREATE DATABASE scheduler_db;
+CREATE DATABASE metrics_db;
+CREATE DATABASE worker_db;
+CREATE DATABASE users_db;

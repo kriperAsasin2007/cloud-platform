@@ -49,7 +49,7 @@
     "prisma-generate": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "npx prisma generate --schema=apps/deployment-service/prisma/schema.prisma",
+        "command": "npx prisma generate --schema=apps/deployment-service/prisma/schema.prisma && node -e \"const fs=require('fs'),p='node_modules/@prisma/client/package.json',pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.exports['./deployment']={'require':'./deployment/index.js','import':'./deployment/index.js','default':'./deployment/index.js'};fs.writeFileSync(p,JSON.stringify(pkg,null,2));\"",
         "cwd": "{workspaceRoot}"
       }
     },

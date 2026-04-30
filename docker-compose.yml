@@ -111,9 +111,16 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: api-gateway
       KAFKA_GROUP_ID: api-gateway-service
+      JWT_SECRET: dev-jwt-secret-change-in-prod
+      JWT_REFRESH_SECRET: dev-jwt-refresh-secret-change-in-prod
+      INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
+      METRICS_SERVICE_URL: http://metrics-service:3004
+      USERS_SERVICE_URL: http://users-service:3005
     depends_on:
       kafka:
         condition: service_healthy
+      users-service:
+        condition: service_started
     restart: unless-stopped
 
   deployment-service:
@@ -157,6 +164,43 @@ services:
       zookeeper-2:
         condition: service_healthy
       zookeeper-3:
+        condition: service_healthy
+    restart: unless-stopped
+
+  metrics-service:
+    build:
+      context: .
+      dockerfile: apps/metrics-service/Dockerfile
+    container_name: metrics-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      DATABASE_URL: postgresql://user:password@postgres-db:5432/metrics_db
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: metrics-service
+      KAFKA_GROUP_ID: metrics-service
+      INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  users-service:
+    build:
+      context: .
+      dockerfile: apps/users-service/Dockerfile
+    container_name: users-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgresql://user:password@postgres-db:5432/users_db
+      INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
+    depends_on:
+      postgres-db:
         condition: service_healthy
     restart: unless-stopped
 

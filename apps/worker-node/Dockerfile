@@ -1,12 +1,17 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache libc6-compat openssl
+
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
+RUN npx prisma generate --schema=apps/worker-node/prisma/schema.prisma && \
+    node -e "const fs=require('fs'),p='node_modules/@prisma/client/package.json',pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.exports['./worker']={'require':'./worker/index.js','import':'./worker/index.js','default':'./worker/index.js'};fs.writeFileSync(p,JSON.stringify(pkg,null,2));"
 
 RUN npx nx build worker-node --prod
 

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import Docker from 'dockerode';
 import * as os from 'os';
 import { utils as sshUtils } from 'ssh2';
+import { PrismaService } from '../prisma/prisma.service';
 import { PortAllocatorService } from './port-allocator.service';
 
 export interface ContainerInfo {
@@ -42,11 +43,13 @@ const DEFAULT_IMAGE = 'lscr.io/linuxserver/openssh-server:latest';
 export class ProvisioningService implements OnModuleInit {
   private readonly logger = new Logger(ProvisioningService.name);
   private readonly docker = new Docker();
-  private readonly containers = new Map<string, ContainerInfo>();
+  // Only SSH key material stays in memory — session-only values, not persisted
+  private readonly keyMaterial = new Map<string, { userPublicKey?: string; proxyPrivateKey?: string }>();
 
   constructor(
     private readonly config: ConfigService,
     private readonly portAllocator: PortAllocatorService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -54,7 +57,7 @@ export class ProvisioningService implements OnModuleInit {
   }
 
   async provisionContainer(msg: ScheduledMsg): Promise<ContainerInfo> {
-    const hostPort = this.portAllocator.allocate();
+    const hostPort = await this.portAllocator.allocate(msg.instanceId);
     const image = IMAGE_MAP[msg.imageType] ?? DEFAULT_IMAGE;
     const { private: proxyPrivateKey, public: proxyPublicKey } =
       sshUtils.generateKeyPairSync('rsa', { bits: 2048 });
@@ -86,7 +89,27 @@ export class ProvisioningService implements OnModuleInit {
 
     await container.start();
 
-    const info: ContainerInfo = {
+    await this.prisma.container.create({
+      data: {
+        instanceId: msg.instanceId,
+        containerId: container.id,
+        sshPort: hostPort,
+        cpuMillicores: msg.cpu,
+        memoryMb: msg.memory,
+        status: 'RUNNING',
+      },
+    });
+
+    this.keyMaterial.set(msg.instanceId, {
+      userPublicKey: msg.publicKey,
+      proxyPrivateKey,
+    });
+
+    this.logger.log(
+      `Container ${container.id} started for instance ${msg.instanceId} on port ${hostPort}`,
+    );
+
+    return {
       containerId: container.id,
       hostPort,
       cpu: msg.cpu,
@@ -94,23 +117,15 @@ export class ProvisioningService implements OnModuleInit {
       userPublicKey: msg.publicKey,
       proxyPrivateKey,
     };
-
-    this.containers.set(msg.instanceId, info);
-    this.logger.log(
-      `Container ${container.id} started for instance ${msg.instanceId} on port ${hostPort}`,
-    );
-    return info;
   }
 
-  async terminateContainer(
-    instanceId: string,
-  ): Promise<{ cpu: number; memory: number }> {
-    const info = this.containers.get(instanceId);
-    if (!info) {
+  async terminateContainer(instanceId: string): Promise<{ cpu: number; memory: number }> {
+    const row = await this.prisma.container.findUnique({ where: { instanceId } });
+    if (!row) {
       throw new Error(`No container tracked for instance ${instanceId}`);
     }
 
-    const container = this.docker.getContainer(info.containerId);
+    const container = this.docker.getContainer(row.containerId);
     try {
       await container.stop({ t: 10 });
     } catch (err: unknown) {
@@ -119,40 +134,53 @@ export class ProvisioningService implements OnModuleInit {
     }
     await container.remove();
 
-    this.portAllocator.release(info.hostPort);
-    this.containers.delete(instanceId);
+    await this.portAllocator.release(row.sshPort);
+    await this.prisma.container.update({
+      where: { instanceId },
+      data: { status: 'REMOVED' },
+    });
+    this.keyMaterial.delete(instanceId);
+
     this.logger.log(
-      `Container ${info.containerId} removed for instance ${instanceId}`,
+      `Container ${row.containerId} removed for instance ${instanceId}`,
     );
-    return { cpu: info.cpu, memory: info.memory };
+    return { cpu: row.cpuMillicores, memory: row.memoryMb };
   }
 
-  getContainerByInstanceId(instanceId: string): ContainerInfo | undefined {
-    return this.containers.get(instanceId);
+  async getContainerByInstanceId(instanceId: string): Promise<ContainerInfo | undefined> {
+    const row = await this.prisma.container.findUnique({ where: { instanceId } });
+    if (!row || row.status === 'REMOVED') return undefined;
+    const keys = this.keyMaterial.get(instanceId) ?? {};
+    return {
+      containerId: row.containerId,
+      hostPort: row.sshPort,
+      cpu: row.cpuMillicores,
+      memory: row.memoryMb,
+      ...keys,
+    };
   }
 
-  getSystemMetrics(): SystemMetrics {
+  async getSystemMetrics(): Promise<SystemMetrics> {
+    const rows = await this.prisma.container.findMany({
+      where: { status: 'RUNNING' },
+    });
+
     const totalCpu =
       parseInt(this.config.get('TOTAL_CPU_MILLICORES', '0'), 10) ||
       os.cpus().length * 1000;
-    const totalMemory = Math.floor(os.totalmem() / 1024 / 1024);
+    const totalMemory =
+      parseInt(this.config.get('TOTAL_MEMORY_MB', '0'), 10) ||
+      Math.floor(os.totalmem() / 1024 / 1024);
 
-    let allocatedCpu = 0;
-    let allocatedMemory = 0;
-    const runningContainerIds: string[] = [];
-
-    for (const info of this.containers.values()) {
-      allocatedCpu += info.cpu;
-      allocatedMemory += info.memory;
-      runningContainerIds.push(info.containerId);
-    }
+    const allocatedCpu = rows.reduce((s, r) => s + r.cpuMillicores, 0);
+    const allocatedMemory = rows.reduce((s, r) => s + r.memoryMb, 0);
 
     return {
       totalCpu,
       freeCpu: Math.max(0, totalCpu - allocatedCpu),
       totalMemory,
       freeMemory: Math.max(0, totalMemory - allocatedMemory),
-      runningContainerIds,
+      runningContainerIds: rows.map((r) => r.containerId),
     };
   }
 
@@ -187,11 +215,21 @@ export class ProvisioningService implements OnModuleInit {
         );
         if (!portBinding?.PublicPort) continue;
 
-        this.containers.set(instanceId, {
-          containerId: c.Id,
-          hostPort: portBinding.PublicPort,
-          cpu: 0,
-          memory: 0,
+        await this.prisma.container.upsert({
+          where: { instanceId },
+          create: {
+            instanceId,
+            containerId: c.Id,
+            sshPort: portBinding.PublicPort,
+            cpuMillicores: 0,
+            memoryMb: 0,
+            status: 'RUNNING',
+          },
+          update: {
+            containerId: c.Id,
+            sshPort: portBinding.PublicPort,
+            status: 'RUNNING',
+          },
         });
         recovered++;
       }
