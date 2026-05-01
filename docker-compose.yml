@@ -120,10 +120,13 @@ services:
       DEPLOYMENT_SERVICE_URL: http://deployment-service:3001
       METRICS_SERVICE_URL: http://metrics-service:3004
       USERS_SERVICE_URL: http://users-service:3005
+      STORAGE_SERVICE_URL: http://storage-service:3006
     depends_on:
       kafka:
         condition: service_healthy
       users-service:
+        condition: service_started
+      storage-service:
         condition: service_started
     restart: unless-stopped
 
@@ -209,9 +212,52 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  storage-service:
+    build:
+      context: .
+      dockerfile: apps/storage-service/Dockerfile
+    container_name: storage-service
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      DATABASE_URL: postgresql://user:password@postgres-db:5432/storage_db
+      INTERNAL_JWT_SECRET: dev-internal-secret-change-in-prod
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   zookeeper1_data:
   zookeeper2_data:
   zookeeper3_data:
   kafka_data:
   postgres_data:
+  minio_data:

@@ -1,15 +1,20 @@
 import {
+  Body,
   Controller,
-  Post,
   Delete,
   Get,
-  Param,
-  Body,
   HttpCode,
   HttpStatus,
+  Param,
   ParseUUIDPipe,
+  Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { InstancesService, CreateInstanceDto } from './instances.service';
 import { UserId } from '../auth/user-id.decorator';
 import { InstanceRecord } from '@cloud-platform-app/deployment-client';
@@ -29,7 +34,7 @@ export class InstancesController {
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: 'Request a new instance (async)' })
-  async createInstance(
+  createInstance(
     @UserId() userId: string,
     @Body() dto: CreateInstanceDto,
   ): Promise<{ instanceId: string }> {
@@ -39,6 +44,7 @@ export class InstancesController {
   @Delete(':id')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: 'Request instance termination (async)' })
+  @ApiParam({ name: 'id', description: 'Instance UUID', format: 'uuid' })
   async terminateInstance(
     @UserId() userId: string,
     @Param('id', ParseUUIDPipe) id: string,

@@ -1,0 +1,36 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../node_modules/@prisma/client/storage"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Bucket {
+  id          String           @id @default(uuid()) @db.Uuid
+  displayName String
+  userId      String           @db.Uuid
+  createdAt   DateTime         @default(now())
+  objects     ObjectMetadata[]
+
+  @@unique([userId, displayName])
+  @@index([userId])
+  @@map("buckets")
+}
+
+model ObjectMetadata {
+  id        String   @id @default(uuid()) @db.Uuid
+  bucketId  String   @db.Uuid
+  objectKey String
+  userMeta  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bucket    Bucket   @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@unique([bucketId, objectKey])
+  @@index([bucketId])
+  @@map("object_metadata")
+}

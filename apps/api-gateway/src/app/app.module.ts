@@ -9,6 +9,7 @@ import { KafkaModule } from '@cloud-platform-app/kafka';
 import { MetricsClientModule } from '@cloud-platform-app/metrics-client';
 import { UsersClientModule } from '@cloud-platform-app/users-client';
 import { DeploymentClientModule } from '@cloud-platform-app/deployment-client';
+import { StorageClientModule } from '@cloud-platform-app/storage-client';
 import { JwtMiddleware } from '../auth/jwt.middleware';
 import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
@@ -17,6 +18,7 @@ import { InstancesService } from '../instances/instances.service';
 import { EventsGateway } from '../websockets/events.gateway';
 import { ApiGatewayKafkaConsumer } from '../kafka/api-gateway.kafka.consumer';
 import { MetricsController } from '../metrics/metrics.controller';
+import { StorageController } from '../storage/storage.controller';
 
 @Module({
   imports: [
@@ -53,8 +55,16 @@ import { MetricsController } from '../metrics/metrics.controller';
         internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
       }),
     }),
+    StorageClientModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        storageServiceUrl: config.getOrThrow('STORAGE_SERVICE_URL'),
+        internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
+      }),
+    }),
   ],
-  controllers: [AuthController, InstancesController, MetricsController],
+  controllers: [AuthController, InstancesController, MetricsController, StorageController],
   providers: [AuthService, InstancesService, EventsGateway, ApiGatewayKafkaConsumer],
 })
 export class AppModule implements NestModule {
@@ -67,6 +77,7 @@ export class AppModule implements NestModule {
         { path: 'instances/:id', method: RequestMethod.DELETE },
         { path: 'metrics/me', method: RequestMethod.GET },
         { path: 'metrics/instances/:id', method: RequestMethod.GET },
+        { path: 'storage/*path', method: RequestMethod.ALL },
       );
   }
 }

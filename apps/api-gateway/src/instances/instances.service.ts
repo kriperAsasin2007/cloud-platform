@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 import { KafkaService } from '@cloud-platform-app/kafka';
 import {
   DeploymentClientService,
@@ -9,15 +10,25 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class CreateInstanceDto {
   @ApiProperty({ example: 500, description: 'CPU in millicores (e.g. 500 = 0.5 vCPU)' })
+  @IsInt()
+  @Min(100)
+  @Max(4000)
   cpu!: number;
 
   @ApiProperty({ example: 512, description: 'Memory in MB' })
+  @IsInt()
+  @Min(128)
+  @Max(16384)
   memory!: number;
 
   @ApiProperty({ example: 'ubuntu', description: 'Docker image type' })
+  @IsString()
+  @IsNotEmpty()
   imageType!: string;
 
   @ApiProperty({ example: 'ssh-rsa AAAA...', description: 'SSH public key for instance access' })
+  @IsString()
+  @IsNotEmpty()
   sshPublicKey!: string;
 }
 
