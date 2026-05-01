@@ -4,6 +4,7 @@ import { LoginPage } from '../pages/Login/LoginPage';
 import { Layout } from '../components/Layout/Layout';
 import { DashboardHome } from '../components/Dashboard/DashboardHome';
 import { InstancesTab } from '../components/Instances/InstancesTab';
+import { StorageTab } from '../components/Storage/StorageTab';
 
 function AppRoutes() {
   const { user, isLoading } = useAuth();
@@ -26,6 +27,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<DashboardHome />} />
         <Route path="/instances" element={<InstancesTab />} />
+        <Route path="/storage" element={<StorageTab />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
