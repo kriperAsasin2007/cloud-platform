@@ -12,12 +12,19 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InstancesService, CreateInstanceDto } from './instances.service';
 import { UserId } from '../auth/user-id.decorator';
+import { InstanceRecord } from '@cloud-platform-app/deployment-client';
 
 @ApiTags('instances')
 @ApiBearerAuth('access-token')
 @Controller('instances')
 export class InstancesController {
   constructor(private readonly instancesService: InstancesService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List all instances for the authenticated user' })
+  listInstances(@UserId() userId: string): Promise<InstanceRecord[]> {
+    return this.instancesService.listInstances(userId);
+  }
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
@@ -27,14 +34,6 @@ export class InstancesController {
     @Body() dto: CreateInstanceDto,
   ): Promise<{ instanceId: string }> {
     return this.instancesService.requestCreate(userId, dto);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get instance info (use WebSocket for live status)' })
-  getInstance(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): { instanceId: string; message: string } {
-    return { instanceId: id, message: 'Use WebSocket for real-time status updates' };
   }
 
   @Delete(':id')

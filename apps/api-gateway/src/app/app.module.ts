@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { KafkaModule } from '@cloud-platform-app/kafka';
 import { MetricsClientModule } from '@cloud-platform-app/metrics-client';
 import { UsersClientModule } from '@cloud-platform-app/users-client';
+import { DeploymentClientModule } from '@cloud-platform-app/deployment-client';
 import { JwtMiddleware } from '../auth/jwt.middleware';
 import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
@@ -44,6 +45,14 @@ import { MetricsController } from '../metrics/metrics.controller';
         internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
       }),
     }),
+    DeploymentClientModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        deploymentServiceUrl: config.getOrThrow('DEPLOYMENT_SERVICE_URL'),
+        internalJwtSecret: config.getOrThrow('INTERNAL_JWT_SECRET'),
+      }),
+    }),
   ],
   controllers: [AuthController, InstancesController, MetricsController],
   providers: [AuthService, InstancesService, EventsGateway, ApiGatewayKafkaConsumer],
@@ -53,6 +62,7 @@ export class AppModule implements NestModule {
     consumer
       .apply(JwtMiddleware)
       .forRoutes(
+        { path: 'instances', method: RequestMethod.GET },
         { path: 'instances', method: RequestMethod.POST },
         { path: 'instances/:id', method: RequestMethod.DELETE },
         { path: 'metrics/me', method: RequestMethod.GET },

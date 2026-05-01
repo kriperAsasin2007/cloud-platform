@@ -44,3 +44,8 @@ Thumbs.db
 # --- ENV FILES (The "Safety Net") ---
 .env
 .env.*
+
+.claude/worktrees
+.nx/polygraph
+.nx/self-healing
+vite.config.*.timestamp*
