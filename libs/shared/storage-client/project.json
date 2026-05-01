@@ -1,0 +1,9 @@
+{
+  "name": "storage-client",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/storage-client/src",
+  "projectType": "library",
+  "tags": [],
+  "// targets": "to see all targets run: nx show project storage-client --web",
+  "targets": {}
+}

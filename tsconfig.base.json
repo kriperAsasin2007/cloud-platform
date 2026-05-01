@@ -26,6 +26,9 @@
       ],
       "@cloud-platform-app/deployment-client": [
         "./libs/shared/deployment-client/src/index.ts"
+      ],
+      "@cloud-platform-app/storage-client": [
+        "./libs/shared/storage-client/src/index.ts"
       ]
     }
   },
