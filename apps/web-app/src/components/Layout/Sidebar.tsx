@@ -14,7 +14,6 @@ const NAV = [
   {
     to: '/storage',
     label: 'Storage',
-    disabled: true,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 1.1.9 2 2 2h12a2 2 0 002-2V7M4 7h16M4 7l2-4h12l2 4" />
@@ -40,33 +39,22 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV.map(({ to, label, icon, disabled }) =>
-          disabled ? (
-            <div
-              key={to}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 cursor-not-allowed select-none"
-            >
-              {icon}
-              <span className="text-sm font-medium">{label}</span>
-              <span className="ml-auto text-xs bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">Soon</span>
-            </div>
-          ) : (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-                }`
-              }
-            >
-              {icon}
-              {label}
-            </NavLink>
-          ),
-        )}
+        {NAV.map(({ to, label, icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+              }`
+            }
+          >
+            {icon}
+            {label}
+          </NavLink>
+        ))}
       </nav>
 
       <div className="px-3 py-4 border-t border-slate-100">
