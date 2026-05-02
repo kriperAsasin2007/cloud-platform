@@ -1,7 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Docker from 'dockerode';
+import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
+import { Readable } from 'stream';
 import { utils as sshUtils } from 'ssh2';
 import { PrismaService } from '../prisma/prisma.service';
 import { PortAllocatorService } from './port-allocator.service';
@@ -9,11 +12,10 @@ import { PortAllocatorService } from './port-allocator.service';
 export interface ContainerInfo {
   containerId: string;
   hostPort: number;
+  webPort: number;
   cpu: number;
   memory: number;
-  /** User's public key (OpenSSH format) used by the SSH proxy to authenticate the client. */
   userPublicKey?: string;
-  /** Proxy's private key (OpenSSH format) used to authenticate the proxy to this container. */
   proxyPrivateKey?: string;
 }
 
@@ -33,18 +35,120 @@ interface ScheduledMsg {
   publicKey: string;
 }
 
-const IMAGE_MAP: Record<string, string> = {
-  ubuntu: 'lscr.io/linuxserver/openssh-server:latest',
-  alpine: 'lscr.io/linuxserver/openssh-server:latest',
-};
-const DEFAULT_IMAGE = 'lscr.io/linuxserver/openssh-server:latest';
+// ---------------------------------------------------------------------------
+// Image management
+// ---------------------------------------------------------------------------
+
+type ImageType = 'ubuntu' | 'alpine';
+const IMAGE_TYPES: ImageType[] = ['ubuntu', 'alpine'];
+
+function imageTag(type: string): string {
+  return `cloud-platform/${type}:latest`;
+}
+
+// In dev (nx serve), @nx/js:node executor runs as process.argv[1] so we can't use it.
+// Instead, probe the two known layouts and use whichever exists.
+function resolveDockerImagesDir(): string {
+  const candidates = [
+    // Dev: NX builds into dist/ relative to the workspace root (process.cwd())
+    path.join(
+      process.cwd(),
+      'dist',
+      'apps',
+      'worker-node',
+      'assets',
+      'docker-images',
+    ),
+    // Production: assets sit next to main.js (node dist/main.js)
+    path.join(path.dirname(process.argv[1]), 'assets', 'docker-images'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, 'ubuntu', 'Dockerfile'))) return c;
+  }
+  return candidates[0]; // let readFileSync produce a clear ENOENT if both miss
+}
+const DOCKER_IMAGES_DIR = resolveDockerImagesDir();
+
+interface TarEntry {
+  name: string;
+  content: Buffer;
+  mode?: number;
+}
+
+function loadBuildContext(type: ImageType): TarEntry[] {
+  const dir = path.join(DOCKER_IMAGES_DIR, type);
+  return [
+    {
+      name: 'Dockerfile',
+      content: fs.readFileSync(path.join(dir, 'Dockerfile')),
+    },
+    {
+      name: 'entrypoint.sh',
+      content: fs.readFileSync(path.join(dir, 'entrypoint.sh')),
+      mode: 0o755,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Minimal in-memory tar builder — no external dependencies required
+// ---------------------------------------------------------------------------
+
+function buildTar(entries: TarEntry[]): Buffer {
+  const blocks: Buffer[] = [];
+
+  for (const entry of entries) {
+    const mode = ((entry.mode ?? 0o644) & 0o7777).toString(8).padStart(7, '0');
+
+    const header = Buffer.alloc(512, 0);
+    header.write(entry.name.slice(0, 99), 0, 'utf8');
+    header.write(mode + '\0', 100, 'utf8');
+    header.write('0000000\0', 108, 'utf8'); // uid
+    header.write('0000000\0', 116, 'utf8'); // gid
+    header.write(
+      entry.content.length.toString(8).padStart(11, '0') + '\0',
+      124,
+      'utf8',
+    );
+    header.write(
+      Math.floor(Date.now() / 1000)
+        .toString(8)
+        .padStart(11, '0') + '\0',
+      136,
+      'utf8',
+    );
+    header[156] = 0x30; // '0' = regular file
+    header.write('ustar\0', 257, 'utf8');
+    header.write('00', 263, 'utf8');
+
+    header.fill(0x20, 148, 156); // spaces while computing checksum
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) checksum += header[i];
+    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'utf8');
+
+    blocks.push(header);
+    const padded = Buffer.alloc(Math.ceil(entry.content.length / 512) * 512, 0);
+    entry.content.copy(padded);
+    blocks.push(padded);
+  }
+
+  blocks.push(Buffer.alloc(1024, 0)); // EOF
+  return Buffer.concat(blocks);
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
 
 @Injectable()
 export class ProvisioningService implements OnModuleInit {
   private readonly logger = new Logger(ProvisioningService.name);
   private readonly docker = new Docker();
   // Only SSH key material stays in memory — session-only values, not persisted
-  private readonly keyMaterial = new Map<string, { userPublicKey?: string; proxyPrivateKey?: string }>();
+  private readonly keyMaterial = new Map<
+    string,
+    { userPublicKey?: string; proxyPrivateKey?: string }
+  >();
 
   constructor(
     private readonly config: ConfigService,
@@ -53,34 +157,34 @@ export class ProvisioningService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.buildImages();
     await this.rebuildStateFromDocker();
   }
 
   async provisionContainer(msg: ScheduledMsg): Promise<ContainerInfo> {
-    const hostPort = await this.portAllocator.allocate(msg.instanceId);
-    const image = IMAGE_MAP[msg.imageType] ?? DEFAULT_IMAGE;
+    const [hostPort, webPort] = await Promise.all([
+      this.portAllocator.allocate(msg.instanceId),
+      this.portAllocator.allocate(`${msg.instanceId}:web`),
+    ]);
+    const tag = imageTag(msg.imageType);
     const { private: proxyPrivateKey, public: proxyPublicKey } =
       sshUtils.generateKeyPairSync('rsa', { bits: 2048 });
 
-    this.logger.log(`Pulling image ${image}…`);
-    await this.pullImage(image);
-
     const container = await this.docker.createContainer({
-      Image: image,
-      Env: [
-        'PUID=1000',
-        'PGID=1000',
-        'USER_NAME=user',
-        `PUBLIC_KEY=${proxyPublicKey}`,
-        'SUDO_ACCESS=true',
-      ],
+      Image: tag,
+      // Proxy's public key is injected so it can authenticate into the container via SSH.
+      // The user's public key is stored separately in keyMaterial for the SSH proxy layer.
+      Env: [`AUTHORIZED_KEYS=${proxyPublicKey.trim()}`],
       Labels: {
         'cloud-platform': 'true',
         'instance-id': msg.instanceId,
       },
-      ExposedPorts: { '2222/tcp': {} },
+      ExposedPorts: { '22/tcp': {}, '80/tcp': {} },
       HostConfig: {
-        PortBindings: { '2222/tcp': [{ HostPort: String(hostPort) }] },
+        PortBindings: {
+          '22/tcp': [{ HostPort: String(hostPort) }],
+          '80/tcp': [{ HostPort: String(webPort) }],
+        },
         NanoCpus: msg.cpu * 1_000_000,
         Memory: msg.memory * 1024 * 1024,
         RestartPolicy: { Name: 'no' },
@@ -94,6 +198,7 @@ export class ProvisioningService implements OnModuleInit {
         instanceId: msg.instanceId,
         containerId: container.id,
         sshPort: hostPort,
+        webPort,
         cpuMillicores: msg.cpu,
         memoryMb: msg.memory,
         status: 'RUNNING',
@@ -106,12 +211,13 @@ export class ProvisioningService implements OnModuleInit {
     });
 
     this.logger.log(
-      `Container ${container.id} started for instance ${msg.instanceId} on port ${hostPort}`,
+      `Container ${container.id} started for instance ${msg.instanceId} — SSH :${hostPort} web :${webPort}`,
     );
 
     return {
       containerId: container.id,
       hostPort,
+      webPort,
       cpu: msg.cpu,
       memory: msg.memory,
       userPublicKey: msg.publicKey,
@@ -119,8 +225,12 @@ export class ProvisioningService implements OnModuleInit {
     };
   }
 
-  async terminateContainer(instanceId: string): Promise<{ cpu: number; memory: number }> {
-    const row = await this.prisma.container.findUnique({ where: { instanceId } });
+  async terminateContainer(
+    instanceId: string,
+  ): Promise<{ cpu: number; memory: number }> {
+    const row = await this.prisma.container.findUnique({
+      where: { instanceId },
+    });
     if (!row) {
       throw new Error(`No container tracked for instance ${instanceId}`);
     }
@@ -135,6 +245,7 @@ export class ProvisioningService implements OnModuleInit {
     await container.remove();
 
     await this.portAllocator.release(row.sshPort);
+    if (row.webPort) await this.portAllocator.release(row.webPort);
     await this.prisma.container.update({
       where: { instanceId },
       data: { status: 'REMOVED' },
@@ -147,13 +258,18 @@ export class ProvisioningService implements OnModuleInit {
     return { cpu: row.cpuMillicores, memory: row.memoryMb };
   }
 
-  async getContainerByInstanceId(instanceId: string): Promise<ContainerInfo | undefined> {
-    const row = await this.prisma.container.findUnique({ where: { instanceId } });
+  async getContainerByInstanceId(
+    instanceId: string,
+  ): Promise<ContainerInfo | undefined> {
+    const row = await this.prisma.container.findUnique({
+      where: { instanceId },
+    });
     if (!row || row.status === 'REMOVED') return undefined;
     const keys = this.keyMaterial.get(instanceId) ?? {};
     return {
       containerId: row.containerId,
       hostPort: row.sshPort,
+      webPort: row.webPort ?? 0,
       cpu: row.cpuMillicores,
       memory: row.memoryMb,
       ...keys,
@@ -184,16 +300,50 @@ export class ProvisioningService implements OnModuleInit {
     };
   }
 
-  private async pullImage(image: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      this.docker.pull(
-        image,
-        (err: Error | null, stream: NodeJS.ReadableStream) => {
+  private async buildImages(): Promise<void> {
+    for (const type of IMAGE_TYPES) {
+      const tag = imageTag(type);
+      try {
+        await this.docker.getImage(tag).inspect();
+        this.logger.log(`Image ${tag} already exists, skipping build`);
+      } catch {
+        this.logger.log(`Building image ${tag}…`);
+        try {
+          await this.buildImageFromContext(tag, loadBuildContext(type));
+          this.logger.log(`Image ${tag} built successfully`);
+        } catch (err) {
+          this.logger.error(
+            `Failed to build ${tag} — containers of this type will be unavailable until next restart`,
+            err,
+          );
+        }
+      }
+    }
+  }
+
+  private buildImageFromContext(
+    tag: string,
+    entries: TarEntry[],
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tarStream = Readable.from([buildTar(entries)]);
+      this.docker.buildImage(
+        tarStream as unknown as NodeJS.ReadableStream,
+        { t: tag },
+        (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
           if (err) return reject(err);
+          if (!stream)
+            return reject(new Error('buildImage returned no stream'));
           this.docker.modem.followProgress(
             stream,
-            (followErr: Error | null) => {
+            (
+              followErr: Error | null,
+              output: Array<{ stream?: string; error?: string }>,
+            ) => {
               if (followErr) return reject(followErr);
+              const errLine = output?.find((o) => o.error);
+              if (errLine?.error)
+                return reject(new Error(errLine.error.trim()));
               resolve();
             },
           );
@@ -211,9 +361,15 @@ export class ProvisioningService implements OnModuleInit {
         if (!instanceId || !c.Labels?.['cloud-platform']) continue;
 
         const portBinding = c.Ports?.find(
-          (p) => p.PrivatePort === 2222 && p.PublicPort,
+          // support both current (22) and legacy linuxserver (2222) containers
+          (p) =>
+            (p.PrivatePort === 22 || p.PrivatePort === 2222) && p.PublicPort,
         );
         if (!portBinding?.PublicPort) continue;
+
+        const webPortBinding = c.Ports?.find(
+          (p) => p.PrivatePort === 80 && p.PublicPort,
+        );
 
         await this.prisma.container.upsert({
           where: { instanceId },
@@ -221,6 +377,7 @@ export class ProvisioningService implements OnModuleInit {
             instanceId,
             containerId: c.Id,
             sshPort: portBinding.PublicPort,
+            webPort: webPortBinding?.PublicPort ?? undefined,
             cpuMillicores: 0,
             memoryMb: 0,
             status: 'RUNNING',
@@ -228,6 +385,7 @@ export class ProvisioningService implements OnModuleInit {
           update: {
             containerId: c.Id,
             sshPort: portBinding.PublicPort,
+            webPort: webPortBinding?.PublicPort ?? undefined,
             status: 'RUNNING',
           },
         });

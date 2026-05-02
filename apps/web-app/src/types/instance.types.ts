@@ -18,6 +18,7 @@ export interface Instance {
   containerId: string | null;
   sshPort: number | null;
   ip: string | null;
+  webUrl: string | null;
   createdAt: string;
   updatedAt: string;
   terminatedAt: string | null;
@@ -35,5 +36,6 @@ export interface InstanceStatusEvent {
   status: InstanceStatus;
   sshPort?: number;
   ip?: string;
+  webUrl?: string;
   reason?: string;
 }

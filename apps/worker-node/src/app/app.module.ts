@@ -8,6 +8,7 @@ import { ProvisioningModule } from '../provisioning/provisioning.module';
 import { SshProxyModule } from '../ssh-proxy/ssh-proxy.module';
 import { HeartbeatModule } from '../heartbeat/heartbeat.module';
 import { WorkerKafkaModule } from '../kafka/worker.kafka.module';
+import { WebProxyModule } from '../web-proxy/web-proxy.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { WorkerKafkaModule } from '../kafka/worker.kafka.module';
     SshProxyModule,
     HeartbeatModule,
     WorkerKafkaModule,
+    WebProxyModule,
   ],
 })
 export class AppModule {}

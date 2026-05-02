@@ -18,6 +18,7 @@ interface InstanceProvisionedMsg {
   containerId: string;
   sshPort: number;
   ip: string;
+  webUrl: string | null;
 }
 
 interface ProvisionFailedMsg {
@@ -141,6 +142,7 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
         containerId: msg.containerId,
         sshPort: msg.sshPort,
         ip: msg.ip,
+        webUrl: msg.webUrl ?? undefined,
       },
     );
 
@@ -154,6 +156,7 @@ export class DeploymentKafkaConsumer implements OnApplicationBootstrap {
           status: InstanceStatus.RUNNING,
           sshPort: msg.sshPort,
           ip: msg.ip,
+          webUrl: msg.webUrl,
         },
       }],
     });
