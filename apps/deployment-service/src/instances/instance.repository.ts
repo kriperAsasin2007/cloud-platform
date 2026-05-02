@@ -16,6 +16,7 @@ export interface UpdateStatusMeta {
   containerId?: string;
   sshPort?: number;
   ip?: string;
+  webUrl?: string;
   terminatedAt?: Date;
 }
 

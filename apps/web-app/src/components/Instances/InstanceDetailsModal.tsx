@@ -114,6 +114,21 @@ export function InstanceDetailsModal({ instance, onClose }: Props) {
                 {instance.ip}
               </div>
             )}
+            {instance.webUrl && (
+              <div className="mt-2">
+                <p className="text-xs text-slate-500 mb-1">
+                  Web access (start a server on port 80)
+                </p>
+                <a
+                  href={instance.webUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-slate-800 text-blue-400 text-xs font-mono rounded-lg px-4 py-2.5 hover:text-blue-300 transition break-all"
+                >
+                  {instance.webUrl}
+                </a>
+              </div>
+            )}
           </section>
 
           <section>

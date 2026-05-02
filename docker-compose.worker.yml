@@ -33,6 +33,7 @@ services:
     ports:
       - "${SSH_PROXY_PORT:-2222}:${SSH_PROXY_PORT:-2222}"
       - "${PORT:-3003}:${PORT:-3003}"
+      - "${WEB_PROXY_PORT:-3004}:${WEB_PROXY_PORT:-3004}"
     volumes:
       # Mount Docker socket so the worker can manage containers
       - /var/run/docker.sock:/var/run/docker.sock

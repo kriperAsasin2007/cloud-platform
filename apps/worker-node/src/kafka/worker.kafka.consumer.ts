@@ -53,68 +53,90 @@ export class WorkerKafkaConsumer implements OnApplicationBootstrap {
   private async onInstanceScheduled(msg: InstanceScheduledMsg): Promise<void> {
     if (msg.targetNodeId !== this.nodeId) return;
 
-    this.logger.log(`Provisioning instance ${msg.instanceId} (cpu=${msg.cpu}, mem=${msg.memory})`);
+    this.logger.log(
+      `Provisioning instance ${msg.instanceId} (cpu=${msg.cpu}, mem=${msg.memory})`,
+    );
 
     await this.kafka.publish({
       topic: 'instance.provisioning',
-      messages: [{ key: msg.instanceId, value: { instanceId: msg.instanceId } }],
+      messages: [
+        { key: msg.instanceId, value: { instanceId: msg.instanceId } },
+      ],
     });
 
     try {
       const info = await this.provisioning.provisionContainer(msg);
 
       const ip = this.ngrok.isReady ? this.ngrok.tunnelHost : '127.0.0.1';
-      const sshPort = this.ngrok.isReady ? this.ngrok.tunnelPort : info.hostPort;
+      const sshPort = this.ngrok.isReady
+        ? this.ngrok.tunnelPort
+        : info.hostPort;
+      const webUrl = this.ngrok.hasHttpTunnel
+        ? `${this.ngrok.httpTunnelUrl}/${msg.instanceId}`
+        : null;
 
       await this.kafka.publish({
         topic: 'instance.provisioned',
-        messages: [{
-          key: msg.instanceId,
-          value: {
-            instanceId: msg.instanceId,
-            workerNodeId: this.nodeId,
-            containerId: info.containerId,
-            sshPort,
-            ip,
+        messages: [
+          {
+            key: msg.instanceId,
+            value: {
+              instanceId: msg.instanceId,
+              workerNodeId: this.nodeId,
+              containerId: info.containerId,
+              sshPort,
+              ip,
+              webUrl,
+            },
           },
-        }],
+        ],
       });
 
-      this.logger.log(`Instance ${msg.instanceId} provisioned — SSH: ${ip}:${sshPort}`);
+      this.logger.log(
+        `Instance ${msg.instanceId} provisioned — SSH: ${ip}:${sshPort}`,
+      );
     } catch (err) {
       this.logger.error(`Failed to provision instance ${msg.instanceId}`, err);
       await this.kafka.publish({
         topic: 'instance.provision.failed',
-        messages: [{
-          key: msg.instanceId,
-          value: {
-            instanceId: msg.instanceId,
-            reason: (err as Error).message,
+        messages: [
+          {
+            key: msg.instanceId,
+            value: {
+              instanceId: msg.instanceId,
+              reason: (err as Error).message,
+            },
           },
-        }],
+        ],
       });
     }
   }
 
-  private async onTerminationRequested(msg: TerminationRequestedMsg): Promise<void> {
+  private async onTerminationRequested(
+    msg: TerminationRequestedMsg,
+  ): Promise<void> {
     if (msg.workerNodeId !== this.nodeId) return;
 
     this.logger.log(`Terminating instance ${msg.instanceId}`);
 
     try {
-      const { cpu, memory } = await this.provisioning.terminateContainer(msg.instanceId);
+      const { cpu, memory } = await this.provisioning.terminateContainer(
+        msg.instanceId,
+      );
 
       await this.kafka.publish({
         topic: 'instance.terminated',
-        messages: [{
-          key: msg.instanceId,
-          value: {
-            instanceId: msg.instanceId,
-            workerNodeId: this.nodeId,
-            cpu,
-            memory,
+        messages: [
+          {
+            key: msg.instanceId,
+            value: {
+              instanceId: msg.instanceId,
+              workerNodeId: this.nodeId,
+              cpu,
+              memory,
+            },
           },
-        }],
+        ],
       });
 
       this.logger.log(`Instance ${msg.instanceId} terminated`);

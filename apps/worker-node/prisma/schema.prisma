@@ -19,6 +19,7 @@ model Container {
   instanceId    String          @id @db.Uuid
   containerId   String
   sshPort       Int
+  webPort       Int?
   cpuMillicores Int
   memoryMb      Int
   status        ContainerStatus @default(RUNNING)
@@ -29,7 +30,7 @@ model Container {
 
 model AllocatedPort {
   port        Int      @id
-  instanceId  String   @db.Uuid
+  instanceId  String
   allocatedAt DateTime @default(now())
 
   @@map("allocated_ports")
